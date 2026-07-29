@@ -7,7 +7,10 @@ Assistente pessoal para Telegram feito em Python. O bot:
 - transcreve mensagens de voz e arquivos de áudio com o Groq;
 - mantém um histórico curto em memória;
 - divide respostas maiores que o limite do Telegram;
-- oferece apenas os comandos `/start`, `/limpar` e `/ajuda`.
+- preserva os comandos `/start`, `/limpar` e `/ajuda`;
+- oferece uma camada experimental de filas SQLite, desabilitada por padrão.
+- pode gerar vídeos de reforma com a Agnes quando a integração opcional está
+  configurada.
 
 ## Como funciona
 
@@ -16,6 +19,15 @@ Texto no Telegram ────────────────┐
                                   ├─→ Codex CLI ─→ resposta no Telegram
 Voz/áudio ─→ Groq ─→ transcrição ┘
 ```
+
+Com `QUEUE_ROUTING_ENABLED=true`, tarefas demoradas podem seguir este fluxo:
+
+```text
+Telegram → roteador → SQLite → worker → executor → watcher → Telegram
+```
+
+Existem três filas (`servicos`, `textos` e `videos`), limitadas a um job em
+execução cada. As três filas podem trabalhar simultaneamente.
 
 O bot não usa uma chave da API OpenAI. Ele executa `codex exec` com a
 autenticação da assinatura do Codex/ChatGPT já ativa no usuário do sistema. Cada
@@ -132,6 +144,17 @@ Configurações disponíveis:
 | `GROQ_TRANSCRIPTION_MODEL` | não | Padrão `whisper-large-v3-turbo` |
 | `GROQ_TRANSCRIPTION_LANGUAGE` | não | Idioma ISO-639-1; padrão `pt` |
 | `MAX_AUDIO_MB` | não | Limite local antes do envio ao Groq |
+| `QUEUE_ROUTING_ENABLED` | não | Ativa decisões `reply`, `clarify` e `enqueue` |
+| `QUEUE_DATABASE_PATH` | não | Banco SQLite; padrão `data/inemacabot.sqlite3` |
+| `SKILLS_REGISTRY_PATH` | não | Registro central das skills |
+| `WORKER_POLL_INTERVAL_MS` | não | Intervalo de consulta dos workers |
+| `JOB_LOCK_TIMEOUT_MINUTES` | não | Expiração do lock de execução |
+| `JOB_WORK_ROOT` | não | Pastas isoladas dos jobs |
+| `JOB_EXECUTION_TIMEOUT_SECONDS` | não | Timeout do agente temporário |
+| `DELIVERY_MAX_ATTEMPTS` | não | Limite de tentativas de entrega |
+| `AGNES_API_KEY` | para virtual staging | Chave da API Agnes, mantida somente no `.env` |
+| `VSV_SKILLS_ROOT` | não | Diretório das skills clonadas de `vsvideo-skill` |
+| `VSV_MAX_IMAGE_MB` | não | Limite da foto enviada para `/vsvideo`; padrão 10 MB |
 
 O arquivo `.env` é ignorado pelo Git.
 
@@ -164,6 +187,105 @@ Depois, no Telegram:
 6. depois de configurar o Groq, envie uma mensagem de voz.
 
 Os erros básicos aparecem no terminal, sem registrar os tokens.
+
+### Testar as filas experimentais
+
+As Fases 0–7 estão disponíveis para teste. A Fase 8 — serviços de produção,
+retenção, backup e endurecimento operacional — ainda não foi iniciada.
+
+Para o primeiro teste, mantenha `QUEUE_ROUTING_ENABLED=false` e inicie, em
+terminais separados:
+
+```bash
+.venv/bin/python bot.py
+.venv/bin/python -m workers.runner --queue servicos
+.venv/bin/python -m workers.runner --queue textos
+.venv/bin/python -m workers.runner --queue videos
+.venv/bin/python -m delivery.watcher
+```
+
+No Telegram, envie:
+
+```text
+/testefila Olá, fila
+```
+
+O worker aguardará 10 segundos, criará `resultado.txt` e o watcher enviará o
+resultado. Para testar roteamento natural, altere para
+`QUEUE_ROUTING_ENABLED=true`, reinicie o bot e envie:
+
+```text
+Crie um roteiro sobre filas assíncronas.
+Crie um plano de vídeo sobre agentes temporários.
+```
+
+`plano-video` gera planejamento, roteiro e cenas em texto; não renderiza mídia.
+
+Comandos de acompanhamento:
+
+```text
+/status
+/filas
+/meusjobs
+/job <id>
+/cancelar <id>
+/repetir <id>
+/skills
+```
+
+### Gerar vídeo de reforma com Agnes
+
+Clone e configure as skills:
+
+```bash
+git clone https://github.com/inematds/vsvideo-skill.git \
+  /root/projetos/vsvideo-skill
+```
+
+Defina `AGNES_API_KEY` diretamente no `.env`, mantenha
+`VSV_SKILLS_ROOT=/root/projetos/vsvideo-skill/skills` e inicie o worker
+`videos` e o watcher.
+
+No Telegram, envie uma foto de um interior finalizado e use exatamente esta
+legenda:
+
+```text
+/vsvideo
+```
+
+O bot baixa a imagem somente depois da autorização, cria um job isolado sob
+`data/jobs`, executa a skill `vsvideo-agnes` e entrega o MP4 quando terminar.
+Não use imagens confidenciais no plano gratuito da Agnes.
+
+### Exemplo de nova skill: integração HeyGen
+
+O projeto contém uma proposta documentada para adicionar `heygen-avatar` e
+`heygen-video` à fila `videos`. Ela mostra o ciclo completo necessário para
+incluir uma skill externa: registro, executor permitido, comando ou roteamento,
+worker isolado, acompanhamento do job, entrega, configuração e testes.
+
+Essa integração **ainda não está implementada**. A skill atual `plano-video`
+gera somente planejamento e roteiro em texto; ela não renderiza vídeos.
+
+O uso proposto pelo Telegram é:
+
+```text
+/avatar <descrição>
+/video <tema ou instrução>
+/videoestoque <tema ou instrução>
+/job <id>
+/cancelar <id>
+```
+
+Exemplo:
+
+```text
+/video Crie um vídeo vertical de 30 segundos apresentando o InemacaBot
+```
+
+Consulte [Exemplo de integração de skill: HeyGen](doc/exemplo_integracao_skill_heygen.md)
+para ver a arquitetura, configuração segura, etapas de implantação e o roteiro
+reutilizável para adicionar outras skills ao sistema.
 
 ## 7. Manter o bot ativo em uma VPS
 
@@ -251,3 +373,4 @@ por `/limpar` e sempre que o processo é reiniciado.
 - [Codex CLI — execução não interativa](https://developers.openai.com/codex/cli)
 - [Telegram Bot API](https://core.telegram.org/bots/api)
 - [Groq Speech to Text](https://console.groq.com/docs/speech-to-text)
+- [Exemplo de integração de skill: HeyGen](doc/exemplo_integracao_skill_heygen.md)

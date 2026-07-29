@@ -10,7 +10,9 @@ implementação atual:
 - transcreve voz e áudio pelo Groq quando `GROQ_API_KEY` está configurada;
 - mantém um histórico curto somente em memória;
 - divide respostas longas antes de enviá-las ao Telegram;
-- oferece apenas os comandos `/start`, `/ajuda` e `/limpar`.
+- preserva `/start`, `/ajuda` e `/limpar`;
+- possui filas experimentais SQLite, workers e watcher, com roteamento
+  desabilitado por padrão.
 
 O documento `doc/plano_implementacao.md` descreve uma possível migração para uma
 API HTTP compatível com OpenAI e a remoção do suporte a áudio. Essa migração
@@ -33,6 +35,12 @@ Telegram -> autorização -> download -> Groq -> transcrição -> Codex CLI
          -> histórico -> Telegram
 ```
 
+Fluxo opcional de job:
+
+```text
+Telegram -> roteador -> SQLite -> worker -> executor -> watcher -> Telegram
+```
+
 Arquivos principais:
 
 - `bot.py`: ponto de entrada, handlers e composição dos serviços;
@@ -42,6 +50,12 @@ Arquivos principais:
 - `transcription_client.py`: integração opcional com a transcrição do Groq;
 - `history.py`: histórico limitado e não persistente;
 - `message_utils.py`: divisão segura de respostas longas;
+- `queueing/`: domínio, migration e repositório SQLite;
+- `routing/`: decisão validada entre resposta, esclarecimento e job;
+- `skills/`: registro central de skills;
+- `agents/`: executores temporários;
+- `workers/`: consumidor genérico das três filas;
+- `delivery/`: formatação e watcher de entrega;
 - `tests/`: testes unitários;
 - `README.md`: instalação, configuração, operação e solução de problemas.
 
@@ -59,8 +73,11 @@ Arquivos principais:
 - Erros enviados ao usuário devem ser curtos e não revelar detalhes internos.
 - Mantenha o cliente do Codex em sessão efêmera, diretório temporário vazio e
   sandbox somente leitura.
-- Não introduza execução de ferramentas, comandos externos pelo modelo,
-  múltiplos agentes ou automações sem uma decisão explícita de produto.
+- Mantenha o cliente de conversa separado do executor de jobs.
+- Novas skills ou permissões de execução exigem decisão explícita de produto.
+- Nunca use `shell=True` nem concatene texto do usuário em comandos.
+- Todo job deve trabalhar em pasta isolada sob `data/jobs`.
+- A captura deve permanecer atômica, com no máximo um job `running` por fila.
 - Atualize o `README.md`, o `.env.example` e os testes quando uma mudança alterar
   configuração ou comportamento observável.
 
@@ -79,6 +96,11 @@ Variáveis principais:
 - `GROQ_TRANSCRIPTION_MODEL`: opcional;
 - `GROQ_TRANSCRIPTION_LANGUAGE`: opcional;
 - `MAX_AUDIO_MB`: opcional.
+- `QUEUE_ROUTING_ENABLED`: habilita o roteamento, padrão `false`;
+- `QUEUE_DATABASE_PATH`: banco SQLite;
+- `SKILLS_REGISTRY_PATH`: registro central;
+- `WORKER_POLL_INTERVAL_MS`: intervalo dos workers;
+- `JOB_WORK_ROOT`: diretório isolado dos jobs.
 
 O processo deve executar com o mesmo usuário do sistema que realizou
 `codex login`.
@@ -109,6 +131,15 @@ Execução local:
 .venv/bin/python bot.py
 ```
 
+Workers e watcher de teste:
+
+```bash
+.venv/bin/python -m workers.runner --queue servicos
+.venv/bin/python -m workers.runner --queue textos
+.venv/bin/python -m workers.runner --queue videos
+.venv/bin/python -m delivery.watcher
+```
+
 Antes de iniciar o bot, confira:
 
 ```bash
@@ -126,5 +157,5 @@ Antes de concluir uma mudança:
 4. verifique se usuários não autorizados continuam sem acionar serviços;
 5. revise se documentação e configuração permanecem coerentes com o código.
 
-O diretório pode não estar dentro de um repositório Git. Não presuma que
-comandos como `git status` estarão disponíveis.
+O projeto está versionado em Git. Preserve alterações alheias e revise o diff
+antes de preparar commits.

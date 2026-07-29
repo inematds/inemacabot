@@ -1,0 +1,42 @@
+{
+  "teste-fila": {
+    "queue": "servicos",
+    "description": "Testa o ciclo completo da fila e gera resultado.txt",
+    "enabled": true,
+    "requiredFields": ["texto"],
+    "executor": "test",
+    "instruction": "Copie o texto recebido para o arquivo de resultado."
+  },
+  "roteiro": {
+    "queue": "textos",
+    "description": "Produz um roteiro textual a partir de um tema",
+    "enabled": true,
+    "requiredFields": ["tema"],
+    "executor": "codex",
+    "instruction": "Crie um roteiro claro e estruturado em português sobre o tema informado."
+  },
+  "plano-video": {
+    "queue": "videos",
+    "description": "Produz um plano de vídeo e uma lista de cenas; não renderiza mídia",
+    "enabled": true,
+    "requiredFields": ["tema"],
+    "executor": "codex",
+    "instruction": "Crie um plano de produção de vídeo, com roteiro, cenas, narração e indicações visuais. Não afirme que um vídeo foi renderizado."
+  },
+  "vsvideo-agnes": {
+    "queue": "videos",
+    "description": "Cria um vídeo time-lapse de reforma a partir de uma foto de interior pronto",
+    "enabled": true,
+    "requiredFields": ["image_path"],
+    "executor": "agnes",
+    "instruction": "Preserve a câmera e a arquitetura ao criar o antes da obra e o vídeo de transformação."
+  },
+  "relatorio": {
+    "queue": "servicos",
+    "description": "Produz um relatório textual sobre um tema",
+    "enabled": true,
+    "requiredFields": ["tema"],
+    "executor": "codex",
+    "instruction": "Produza um relatório objetivo, organizado e fiel aos dados fornecidos. Deixe limitações explícitas."
+  }
+}

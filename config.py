@@ -41,6 +41,21 @@ class Settings:
     groq_transcription_model: str = "whisper-large-v3-turbo"
     groq_transcription_language: str = "pt"
     max_audio_bytes: int = 20 * 1024 * 1024
+    queue_database_path: str = "data/inemacabot.sqlite3"
+    queue_routing_enabled: bool = False
+    accept_jobs_when_worker_offline: bool = True
+    skills_registry_path: str = "skills/registry.json"
+    worker_poll_interval_seconds: float = 3.0
+    delivery_poll_interval_seconds: float = 3.0
+    job_lock_timeout_minutes: int = 30
+    job_default_max_attempts: int = 3
+    job_work_root: str = "data/jobs"
+    job_execution_timeout_seconds: int = 1800
+    delivery_max_attempts: int = 5
+    test_skill_delay_seconds: float = 10.0
+    agnes_api_key: str | None = None
+    vsv_skills_root: str = "/root/projetos/vsvideo-skill/skills"
+    vsvideo_max_image_bytes: int = 10 * 1024 * 1024
 
     @classmethod
     def from_env(cls, *, validate_codex: bool = True) -> "Settings":
@@ -66,6 +81,11 @@ class Settings:
         history_max_exchanges = _positive_int("HISTORY_MAX_EXCHANGES", 10)
         codex_timeout_seconds = _positive_int("CODEX_TIMEOUT_SECONDS", 180)
         max_audio_mb = _positive_int("MAX_AUDIO_MB", 20)
+        vsvideo_max_image_mb = _positive_int("VSV_MAX_IMAGE_MB", 10)
+        worker_poll_interval_ms = _positive_int("WORKER_POLL_INTERVAL_MS", 3000)
+        delivery_poll_interval_ms = _positive_int(
+            "DELIVERY_POLL_INTERVAL_MS", 3000
+        )
 
         system_prompt = os.getenv("AI_SYSTEM_PROMPT", DEFAULT_SYSTEM_PROMPT).strip()
         if not system_prompt:
@@ -91,6 +111,39 @@ class Settings:
                 "GROQ_TRANSCRIPTION_LANGUAGE", "pt"
             ).strip(),
             max_audio_bytes=max_audio_mb * 1024 * 1024,
+            queue_database_path=_nonempty(
+                "QUEUE_DATABASE_PATH", "data/inemacabot.sqlite3"
+            ),
+            queue_routing_enabled=_boolean("QUEUE_ROUTING_ENABLED", False),
+            accept_jobs_when_worker_offline=_boolean(
+                "ACCEPT_JOBS_WHEN_WORKER_OFFLINE", True
+            ),
+            skills_registry_path=_nonempty(
+                "SKILLS_REGISTRY_PATH", "skills/registry.json"
+            ),
+            worker_poll_interval_seconds=worker_poll_interval_ms / 1000,
+            delivery_poll_interval_seconds=delivery_poll_interval_ms / 1000,
+            job_lock_timeout_minutes=_positive_int(
+                "JOB_LOCK_TIMEOUT_MINUTES", 30
+            ),
+            job_default_max_attempts=_positive_int(
+                "JOB_DEFAULT_MAX_ATTEMPTS", 3
+            ),
+            job_work_root=_nonempty("JOB_WORK_ROOT", "data/jobs"),
+            job_execution_timeout_seconds=_positive_int(
+                "JOB_EXECUTION_TIMEOUT_SECONDS", 1800
+            ),
+            delivery_max_attempts=_positive_int(
+                "DELIVERY_MAX_ATTEMPTS", 5
+            ),
+            test_skill_delay_seconds=_positive_float(
+                "TEST_SKILL_DELAY_SECONDS", 10.0
+            ),
+            agnes_api_key=_optional("AGNES_API_KEY"),
+            vsv_skills_root=_nonempty(
+                "VSV_SKILLS_ROOT", "/root/projetos/vsvideo-skill/skills"
+            ),
+            vsvideo_max_image_bytes=vsvideo_max_image_mb * 1024 * 1024,
         )
 
 
@@ -106,6 +159,13 @@ def _optional(name: str) -> str | None:
     return value or None
 
 
+def _nonempty(name: str, default: str) -> str:
+    value = os.getenv(name, default).strip()
+    if not value:
+        raise ConfigurationError(f"{name} não pode estar vazio.")
+    return value
+
+
 def _positive_int(name: str, default: int) -> int:
     raw_value = os.getenv(name)
     if raw_value is None or not raw_value.strip():
@@ -117,3 +177,28 @@ def _positive_int(name: str, default: int) -> int:
     if value <= 0:
         raise ConfigurationError(f"{name} deve ser maior que zero.")
     return value
+
+
+def _positive_float(name: str, default: float) -> float:
+    raw_value = os.getenv(name)
+    if raw_value is None or not raw_value.strip():
+        return default
+    try:
+        value = float(raw_value)
+    except ValueError as exc:
+        raise ConfigurationError(f"{name} deve ser um número.") from exc
+    if value <= 0:
+        raise ConfigurationError(f"{name} deve ser maior que zero.")
+    return value
+
+
+def _boolean(name: str, default: bool) -> bool:
+    raw_value = os.getenv(name)
+    if raw_value is None or not raw_value.strip():
+        return default
+    value = raw_value.strip().lower()
+    if value in {"1", "true", "yes", "sim", "on"}:
+        return True
+    if value in {"0", "false", "no", "não", "nao", "off"}:
+        return False
+    raise ConfigurationError(f"{name} deve ser verdadeiro ou falso.")
