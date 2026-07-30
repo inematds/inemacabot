@@ -32,7 +32,10 @@ class CodexClient:
         """Executa uma sessão efêmera e devolve somente a resposta final."""
 
         prompt = self._build_prompt(history, user_message)
+        return await self.execute_prompt(prompt)
 
+    async def execute_prompt(self, prompt: str) -> str:
+        """Executa um prompt seguro sem ferramentas e devolve o texto final."""
         with tempfile.TemporaryDirectory(prefix="inemacabot-codex-") as temp_dir:
             output_path = Path(temp_dir) / "answer.txt"
             command = [

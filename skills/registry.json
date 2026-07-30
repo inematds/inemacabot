@@ -1,0 +1,74 @@
+{
+  "teste-fila": {
+    "queue": "servicos",
+    "description": "Testa o ciclo completo da fila e gera resultado.txt",
+    "enabled": true,
+    "requiredFields": ["texto"],
+    "executor": "test",
+    "instruction": "Copie o texto recebido para o arquivo de resultado."
+  },
+  "roteiro": {
+    "queue": "textos",
+    "description": "Produz um roteiro textual a partir de um tema",
+    "enabled": true,
+    "requiredFields": ["tema"],
+    "executor": "codex",
+    "instruction": "Crie um roteiro claro e estruturado em português sobre o tema informado."
+  },
+  "plano-video": {
+    "queue": "videos",
+    "description": "Produz um plano de vídeo e uma lista de cenas; não renderiza mídia",
+    "enabled": true,
+    "requiredFields": ["tema"],
+    "executor": "codex",
+    "instruction": "Crie um plano de produção de vídeo, com roteiro, cenas, narração e indicações visuais. Não afirme que um vídeo foi renderizado."
+  },
+  "vsvideo-agnes": {
+    "queue": "videos",
+    "description": "Cria vídeo de reforma de 6 ou 18 segundos; no fluxo longo valida câmera, arquitetura e física",
+    "enabled": true,
+    "requiredFields": ["image_path", "duration", "mode"],
+    "executor": "agnes",
+    "instruction": "Preserve a câmera e a arquitetura ao criar o antes da obra e o vídeo de transformação."
+  },
+  "vsvideo-agnes-preview": {
+    "queue": "videos",
+    "description": "Gera e valida três estágios sem pessoas para aprovação antes do vídeo",
+    "enabled": true,
+    "requiredFields": ["image_path", "duration", "mode"],
+    "executor": "agnes",
+    "instruction": "Gere três estágios consistentes a partir da referência original."
+  },
+  "vsvideo-agnes-render": {
+    "queue": "videos",
+    "description": "Revalida estágios aprovados e gera três segmentos físicos com trabalhadores",
+    "enabled": true,
+    "requiredFields": ["stage_paths", "source_job_id", "duration", "mode"],
+    "executor": "agnes",
+    "instruction": "Crie três clipes entre os quatro estágios aprovados e concatene-os."
+  },
+  "vsvideo-codex-agnes": {
+    "queue": "videos",
+    "description": "Gera três imagens pela assinatura Codex e cria os vídeos com Agnes",
+    "enabled": true,
+    "requiredFields": ["image_path", "duration", "mode", "image_provider"],
+    "executor": "codex-agnes",
+    "instruction": "Use a imagem integrada do Codex para os keyframes e a Agnes somente para os vídeos."
+  },
+  "vsvideo-codex-agnes-preview": {
+    "queue": "videos",
+    "description": "Gera imagens pela assinatura Codex para aprovação antes dos vídeos Agnes",
+    "enabled": true,
+    "requiredFields": ["image_path", "duration", "mode", "image_provider"],
+    "executor": "codex-agnes",
+    "instruction": "Gere e valide três keyframes pelo Codex antes de solicitar aprovação."
+  },
+  "relatorio": {
+    "queue": "servicos",
+    "description": "Produz um relatório textual sobre um tema",
+    "enabled": true,
+    "requiredFields": ["tema"],
+    "executor": "codex",
+    "instruction": "Produza um relatório objetivo, organizado e fiel aos dados fornecidos. Deixe limitações explícitas."
+  }
+}
