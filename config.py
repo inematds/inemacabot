@@ -51,6 +51,8 @@ class Settings:
     job_default_max_attempts: int = 3
     job_work_root: str = "data/jobs"
     job_execution_timeout_seconds: int = 1800
+    codex_image_timeout_seconds: int = 600
+    codex_agnes_timeout_seconds: int = 7200
     delivery_max_attempts: int = 5
     test_skill_delay_seconds: float = 10.0
     agnes_api_key: str | None = None
@@ -132,6 +134,12 @@ class Settings:
             job_work_root=_nonempty("JOB_WORK_ROOT", "data/jobs"),
             job_execution_timeout_seconds=_positive_int(
                 "JOB_EXECUTION_TIMEOUT_SECONDS", 1800
+            ),
+            codex_image_timeout_seconds=_positive_int(
+                "CODEX_IMAGE_TIMEOUT_SECONDS", 600
+            ),
+            codex_agnes_timeout_seconds=_positive_int(
+                "CODEX_AGNES_TIMEOUT_SECONDS", 7200
             ),
             delivery_max_attempts=_positive_int(
                 "DELIVERY_MAX_ATTEMPTS", 5

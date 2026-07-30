@@ -24,6 +24,8 @@ async def async_main(queue: QueueName) -> None:
         codex_binary=settings.codex_binary,
         codex_model=settings.codex_model,
         timeout_seconds=settings.job_execution_timeout_seconds,
+        codex_image_timeout_seconds=settings.codex_image_timeout_seconds,
+        codex_agnes_timeout_seconds=settings.codex_agnes_timeout_seconds,
         test_delay_seconds=settings.test_skill_delay_seconds,
         vsv_skills_root=settings.vsv_skills_root,
     )

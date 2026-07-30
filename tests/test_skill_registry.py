@@ -24,10 +24,28 @@ class SkillRegistryTests(unittest.TestCase):
 
     def test_loads_agnes_virtual_staging_skill(self) -> None:
         definition = self.registry.validate_payload(
-            "vsvideo-agnes", {"image_path": "/tmp/job/image.jpg"}
+            "vsvideo-agnes",
+            {
+                "image_path": "/tmp/job/image.jpg",
+                "duration": 18,
+                "mode": "auto18",
+            },
         )
         self.assertEqual(definition.queue, QueueName.VIDEOS)
         self.assertEqual(definition.executor, "agnes")
+
+    def test_loads_codex_agnes_virtual_staging_skill(self) -> None:
+        definition = self.registry.validate_payload(
+            "vsvideo-codex-agnes-preview",
+            {
+                "image_path": "/tmp/job/image.jpg",
+                "duration": 18,
+                "mode": "codex-preview",
+                "image_provider": "codex",
+            },
+        )
+        self.assertEqual(definition.queue, QueueName.VIDEOS)
+        self.assertEqual(definition.executor, "codex-agnes")
 
 
 if __name__ == "__main__":

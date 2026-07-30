@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import shutil
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -25,7 +26,7 @@ from delivery.formatter import format_job_summary
 from history import ConversationHistory
 from message_utils import split_message
 from queueing.job_repository import JobRepository
-from queueing.models import Job, QueueName, generate_job_id
+from queueing.models import Job, JobStatus, QueueName, generate_job_id
 from routing.intent_router import IntentRouter
 from routing.models import RouteAction
 from skills.registry import SkillRegistry
@@ -42,7 +43,9 @@ HELP_MESSAGE = (
     "Envie uma mensagem de texto, uma mensagem de voz ou um arquivo de áudio. "
     "Use /limpar para apagar o contexto recente. "
     "Use /skills para ver as tarefas disponíveis e /meusjobs para acompanhar pedidos. "
-    "Para criar um vídeo de reforma, envie uma foto com a legenda /vsvideo."
+    "Para criar um vídeo de reforma, envie uma foto com /vsvideo 6 ou "
+    "/vsvideo 18. Use /vsvideo 18 codex para gerar as imagens pela assinatura "
+    "Codex e acrescente aprovacao para conferir os estágios antes."
 )
 GENERIC_ERROR_MESSAGE = (
     "Não consegui responder agora. Tente novamente em alguns instantes."
@@ -179,9 +182,20 @@ async def virtual_staging_message(
     if not services.settings.agnes_api_key:
         await message.reply_text("A integração Agnes ainda não está configurada.")
         return
+    try:
+        duration, approval, image_provider = _parse_vsvideo_options(
+            message.caption or message.text or "/vsvideo"
+        )
+    except ValueError:
+        await message.reply_text(
+            "Uso: envie uma foto com /vsvideo 6, /vsvideo 18 ou "
+            "/vsvideo 18 codex. Acrescente aprovacao para conferir antes."
+        )
+        return
     if not message.photo:
         await message.reply_text(
-            "Envie uma foto de interior pronto com a legenda /vsvideo."
+            "Envie uma foto de interior pronto com /vsvideo 6, /vsvideo 18 "
+            "ou /vsvideo 18 codex na legenda."
         )
         return
     photo = message.photo[-1]
@@ -209,11 +223,29 @@ async def virtual_staging_message(
         if len(content) > services.settings.vsvideo_max_image_bytes:
             raise ValueError("imagem acima do limite")
         image_path.write_bytes(content)
+        if image_provider == "codex":
+            skill = (
+                "vsvideo-codex-agnes-preview"
+                if approval
+                else "vsvideo-codex-agnes"
+            )
+            mode = "codex-preview" if approval else "codex-auto18"
+        elif duration == 18 and approval:
+            skill = "vsvideo-agnes-preview"
+            mode = "preview"
+        else:
+            skill = "vsvideo-agnes"
+            mode = "auto18" if duration == 18 else "short"
         job = await _create_job(
             services,
             queue=QueueName.VIDEOS,
-            skill="vsvideo-agnes",
-            payload={"image_path": str(image_path)},
+            skill=skill,
+            payload={
+                "image_path": str(image_path),
+                "duration": duration,
+                "mode": mode,
+                "image_provider": image_provider,
+            },
             update=update,
             job_id=job_id,
         )
@@ -224,6 +256,121 @@ async def virtual_staging_message(
     except Exception:
         LOGGER.exception("Falha ao criar job de virtual staging.")
         await message.reply_text("Não foi possível criar o vídeo agora.")
+        return
+    await message.reply_text(_job_created_message(job))
+
+
+def _parse_vsvideo_options(value: str) -> tuple[int, bool, str]:
+    parts = value.strip().split()
+    if not parts or parts[0].split("@", 1)[0].casefold() != "/vsvideo":
+        raise ValueError("comando inválido")
+    duration = 6
+    approval = False
+    image_provider = "agnes"
+    for part in parts[1:]:
+        normalized = part.casefold()
+        if normalized in {"6", "18"}:
+            duration = int(normalized)
+        elif normalized in {"aprovacao", "aprovação"}:
+            approval = True
+        elif normalized in {"codex", "openai"}:
+            image_provider = "codex"
+        else:
+            raise ValueError("parâmetro inválido")
+    if approval and duration != 18:
+        raise ValueError("aprovação disponível somente para 18 segundos")
+    if image_provider == "codex" and duration != 18:
+        raise ValueError("imagens Codex disponíveis somente para 18 segundos")
+    return duration, approval, image_provider
+
+
+async def approve_video_command(
+    update: Update, context: ContextTypes.DEFAULT_TYPE
+) -> None:
+    services = _services(context)
+    message = update.effective_message
+    user = update.effective_user
+    if not _authorized(update, services) or message is None or user is None:
+        return
+    if not context.args:
+        await message.reply_text("Uso: /aprovarvideo <job_id>")
+        return
+    source = await asyncio.to_thread(
+        services.jobs.get_job, context.args[0], user_id=str(user.id)
+    )
+    if (
+        source is None
+        or source.skill
+        not in {
+            "vsvideo-agnes-preview",
+            "vsvideo-codex-agnes-preview",
+        }
+        or source.status != JobStatus.COMPLETED
+        or not source.result
+    ):
+        await message.reply_text("Job de aprovação não encontrado ou ainda incompleto.")
+        return
+    existing = await asyncio.to_thread(
+        services.jobs.get_jobs_by_user, str(user.id), limit=100
+    )
+    repeated = next(
+        (
+            job
+            for job in existing
+            if job.skill == "vsvideo-agnes-render"
+            and job.payload.get("source_job_id") == source.id
+        ),
+        None,
+    )
+    if repeated is not None:
+        await message.reply_text(
+            f"Esse preview já foi aprovado.\n\nJob do vídeo: {repeated.id}"
+        )
+        return
+
+    raw_files = source.result.get("stage_files", source.result.get("files"))
+    if not isinstance(raw_files, list) or len(raw_files) != 4:
+        await message.reply_text("Os estágios desse job estão incompletos.")
+        return
+    source_root = (Path(services.settings.job_work_root) / source.id).resolve()
+    source_paths = [Path(str(value)).resolve() for value in raw_files]
+    if any(
+        source_root not in path.parents or not path.is_file()
+        for path in source_paths
+    ):
+        await message.reply_text("Os arquivos de aprovação não estão disponíveis.")
+        return
+
+    job_id = generate_job_id()
+    job_root = (Path(services.settings.job_work_root) / job_id).resolve()
+    work_root = Path(services.settings.job_work_root).resolve()
+    if job_root.parent != work_root:
+        await message.reply_text("Não foi possível preparar o job.")
+        return
+    destination_root = job_root / "files"
+    destination_root.mkdir(parents=True, exist_ok=True)
+    destinations: list[str] = []
+    try:
+        for index, source_path in enumerate(source_paths, start=1):
+            destination = destination_root / f"approved-stage-{index}{source_path.suffix}"
+            shutil.copyfile(source_path, destination)
+            destinations.append(str(destination))
+        job = await _create_job(
+            services,
+            queue=QueueName.VIDEOS,
+            skill="vsvideo-agnes-render",
+            payload={
+                "stage_paths": destinations,
+                "source_job_id": source.id,
+                "duration": 18,
+                "mode": "render18",
+            },
+            update=update,
+            job_id=job_id,
+        )
+    except Exception:
+        LOGGER.exception("Falha ao aprovar vídeo de virtual staging.")
+        await message.reply_text("Não foi possível criar o vídeo aprovado agora.")
         return
     await message.reply_text(_job_created_message(job))
 
@@ -555,6 +702,7 @@ async def post_init(application: Application) -> None:
             BotCommand("skills", "Listar skills disponíveis"),
             BotCommand("testefila", "Criar um job de teste"),
             BotCommand("vsvideo", "Criar vídeo de reforma a partir de uma foto"),
+            BotCommand("aprovarvideo", "Aprovar estágios e gerar o vídeo"),
             BotCommand("ajuda", "Mostrar como usar o bot"),
         ]
     )
@@ -604,6 +752,7 @@ def build_application(settings: Settings) -> Application:
     application.add_handler(CommandHandler("skills", skills_command))
     application.add_handler(CommandHandler("testefila", test_queue_command))
     application.add_handler(CommandHandler("vsvideo", virtual_staging_message))
+    application.add_handler(CommandHandler("aprovarvideo", approve_video_command))
     application.add_handler(
         MessageHandler(
             filters.PHOTO

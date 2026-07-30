@@ -22,7 +22,7 @@ class SkillDefinition:
 
 
 class SkillRegistry:
-    ALLOWED_EXECUTORS = {"test", "codex", "agnes"}
+    ALLOWED_EXECUTORS = {"test", "codex", "agnes", "codex-agnes"}
 
     def __init__(self, definitions: dict[str, SkillDefinition]) -> None:
         self._definitions = definitions

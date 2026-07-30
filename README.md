@@ -151,6 +151,8 @@ Configurações disponíveis:
 | `JOB_LOCK_TIMEOUT_MINUTES` | não | Expiração do lock de execução |
 | `JOB_WORK_ROOT` | não | Pastas isoladas dos jobs |
 | `JOB_EXECUTION_TIMEOUT_SECONDS` | não | Timeout do agente temporário |
+| `CODEX_IMAGE_TIMEOUT_SECONDS` | não | Timeout de cada imagem integrada do Codex; padrão 600 s |
+| `CODEX_AGNES_TIMEOUT_SECONDS` | não | Timeout total do fluxo Codex + Agnes; padrão 7.200 s |
 | `DELIVERY_MAX_ATTEMPTS` | não | Limite de tentativas de entrega |
 | `AGNES_API_KEY` | para virtual staging | Chave da API Agnes, mantida somente no `.env` |
 | `VSV_SKILLS_ROOT` | não | Diretório das skills clonadas de `vsvideo-skill` |
@@ -246,16 +248,92 @@ Defina `AGNES_API_KEY` diretamente no `.env`, mantenha
 `VSV_SKILLS_ROOT=/root/projetos/vsvideo-skill/skills` e inicie o worker
 `videos` e o watcher.
 
+O InemacaBot não contém os pipelines nem os prompts de vídeo. O executor copia
+e chama os entrypoints instalados em `VSV_SKILLS_ROOT`; a implementação de
+`agnes` e `codex-agnes` pertence ao repositório
+[`vsvideo-skill`](https://github.com/inematds/vsvideo-skill).
+
 No Telegram, envie uma foto de um interior finalizado e use exatamente esta
-legenda:
+legenda para o fluxo curto:
 
 ```text
 /vsvideo
 ```
 
+`/vsvideo` e `/vsvideo 6` geram o vídeo tradicional de aproximadamente seis
+segundos.
+
+Para criar automaticamente um vídeo de aproximadamente 18 segundos, envie:
+
+```text
+/vsvideo 18
+```
+
+Nesse fluxo, a Agnes cria três imagens intermediárias a partir da mesma foto
+original. Antes disso, o pipeline normaliza a referência para `1312x736`. As
+etapas são geradas de trás para frente — final, acabamento, obra intermediária
+e obra bruta — usando a referência final como âncora de câmera e arquitetura.
+
+Cada par passa por uma validação automática de dimensões e similaridade das
+bordas estruturais. Uma etapa inconsistente é regenerada até três vezes. Se
+nenhuma tentativa atingir o mínimo, o sistema usa a tentativa com melhor
+pontuação, registra um aviso e continua o fluxo. No modo com aprovação, o aviso
+é mostrado para que a decisão final continue sendo do usuário.
+
+Depois da validação, o sistema gera três trechos sequenciais, com
+aproximadamente seis segundos cada, e os concatena em um único MP4. Cada trecho
+tem um prompt próprio para sua fase da obra e inclui exatamente dois
+trabalhadores em cada trecho. Eles ficam em áreas
+abertas, usam ferramentas pequenas e entram ou saem somente por aberturas
+visíveis. Os prompts proíbem movimento de câmera, pessoas ou objetos
+atravessando superfícies, deformações, duplicações e outras ações fisicamente
+impossíveis. Os quatro keyframes permanecem sem pessoas para preservar a
+consistência das imagens.
+
+Para conferir as imagens intermediárias antes de gastar tempo com os três
+trechos, envie:
+
+```text
+/vsvideo 18 aprovacao
+```
+
+O bot entrega uma folha comparativa identificada, as três etapas e a referência
+final já normalizada. Se alguma etapa não atingir o mínimo após três tentativas,
+a melhor delas é entregue com um aviso. Se estiverem corretas, aprove usando o
+identificador informado na resposta:
+
+```text
+/aprovarvideo <job_id>
+```
+
 O bot baixa a imagem somente depois da autorização, cria um job isolado sob
-`data/jobs`, executa a skill `vsvideo-agnes` e entrega o MP4 quando terminar.
-Não use imagens confidenciais no plano gratuito da Agnes.
+`data/jobs`, executa a integração Agnes e entrega os arquivos quando cada etapa
+terminar. Sem o parâmetro `aprovacao`, o processamento segue direto, sem pedir
+confirmação. Não use imagens confidenciais no plano gratuito da Agnes.
+
+#### Imagens pela assinatura Codex e vídeos pela Agnes
+
+Esta é uma skill separada do fluxo Agnes completo. Ela usa a geração de imagens
+integrada do Codex CLI autenticado com ChatGPT e não requer
+`OPENAI_API_KEY`. As imagens contam nos limites de uso da assinatura Codex. O
+worker deve executar com o mesmo usuário do sistema que realizou `codex login`.
+
+Para gerar as imagens no Codex e seguir diretamente para os vídeos Agnes:
+
+```text
+/vsvideo 18 codex
+```
+
+Para revisar os keyframes antes dos vídeos:
+
+```text
+/vsvideo 18 codex aprovacao
+```
+
+`openai` também é aceito como sinônimo de `codex`. Se nenhum dos dois for
+informado, o comportamento permanece o mesmo: a Agnes gera as imagens e os
+vídeos. O executor Codex + Agnes é separado do cliente de conversa, trabalha
+somente dentro da pasta isolada do job e recebe escrita apenas nessa pasta.
 
 ### Exemplo de nova skill: integração HeyGen
 

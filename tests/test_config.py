@@ -27,6 +27,8 @@ class SettingsTests(unittest.TestCase):
         self.assertEqual(settings.queue_database_path, "data/inemacabot.sqlite3")
         self.assertIsNone(settings.agnes_api_key)
         self.assertEqual(settings.vsvideo_max_image_bytes, 10 * 1024 * 1024)
+        self.assertEqual(settings.codex_image_timeout_seconds, 600)
+        self.assertEqual(settings.codex_agnes_timeout_seconds, 7200)
 
     def test_rejects_missing_token(self) -> None:
         with patch.dict(
